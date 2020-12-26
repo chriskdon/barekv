@@ -1,0 +1,2 @@
+barekv:
+	fasm barekv.asm
