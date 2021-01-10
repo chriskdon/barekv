@@ -26,12 +26,22 @@ key_3_size: equ $ - key_3
 val_1: db 'val_1'
 val_2_size: equ $ - val_1
 
-kv_node_pool: resb 100 * KVNode_size
-kv_array: resb 100 * ptr_sz  ;; Array of pointers to KVNodes
+section .bss
+
+kv_pool_size: equ 2
+kv_pool: resb kv_pool_size * KVNode_size
+
+kv_array_size: equ 100
+kv_array: resb kv_array * ptr_sz  ;; Array of pointers to KVNodes
 
 section .text
 
 _start:
+	call 	kvpool_init
+	call 	kvpool_get
+	call	kvpool_get
+	call 	kvpool_get
+
 	lea 	rsi, [msg]
 	mov 	rdx, msg_size
 	; call 	print_str
@@ -47,9 +57,54 @@ _start:
 
 	call 	exit_success
 
+;; Initialize the KV pool.
+;;   !RCX, !RAX, !RDX
+kvpool_init:
+	mov rcx, kv_pool_size
+	
+.init_loop:
+	dec rcx
+
+	;; rax = Node offset
+	mov rax, KVNode_size
+	mov rdx, rcx
+	mul rdx
+
+	;; Set all the nodes in the pool to free
+	mov qword [kv_pool + rax + KVNode.is_free], 1
+	
+	test rcx, rcx
+	jnz .init_loop	
+
+.end:
+	ret
+
 ;; Get a KVNode from the pool.
-;;   @[O] node <RAX: ptr> Pointer to a free KVNode
+;;   !RCX, !RAX
+;;   @[O] node <RAX: ptr> Pointer to a free KVNode or 0 for not found.
 kvpool_get:
+	mov rcx, kv_pool_size
+
+.find_loop:
+	dec rcx
+	jl .not_found
+
+	;; rax = Node offset
+	mov rax, KVNode_size
+	mov rdx, rcx
+	mul rdx
+
+	;; Find the first free node
+	lea rax, [kv_pool + rax]
+	cmp byte [rax + KVNode.is_free], 1
+	jnz .find_loop
+	
+	mov byte [rax + KVNode.is_free], 0
+	jmp .end
+
+.not_found:
+	mov rax, 0 
+.end:
 	ret
 
 ;; Free/return a KVNode to the pool.
