@@ -5,7 +5,10 @@ global _start
 
 ;; Register order
 ;; ARGS: RDX, RSI, RDI, R8, R9, R10
-;; RETURN: RAX
+;; RETURN: RAX, R11
+
+%define SUCCESS 0
+%define ERROR   1
 
 ;; Function setup
 %macro fpre 0
@@ -59,7 +62,7 @@ kv_pool_size: equ 5
 kv_pool: resb kv_pool_size * KVNode_size
 
 kv_array_size: equ 100
-kv_array: resb kv_array * ptr_sz  ;; Array of pointers to KVNodes
+kv_array: resb kv_array_size * ptr_sz  ;; Array of pointers to KVNodes
 
 section .text
 
@@ -186,21 +189,65 @@ kv_print:
 	fpost
 	ret
 	
-;; Set a key-value pair in a hashmap
-;;   @[I] hashmap    <RDX: ptr>     Pointer to hashmap data structure.
-;;   @[I] key        <RSI: ptr>     Pointer to a string to use as a key.
-;;   @[I] value      <RDI: ptr>     Pointer to bytes.
-;;   @[I] value_size <R8: uint32>   Length of the value bytes.
+;; Set a key-value pair in the hashmap
+;;   @[I] key        <RDX: ptr>     Pointer to a string to use as a key.
+;;   @[I] value      <RSI: ptr>     Pointer to bytes.
+;;   @[I] value_size <RDI: uint32>  Length of the value bytes.
+;;   @[O] success    <RAX: byte>    0 for success, error otherwise
 kv_set:
+	fpre
+
+	;; Get the index for the key 
+	call 	kv_get_index
+
+	;; Set the node in the hashmap
+	mov 	r8, rax
+	call 	kv_set_index
+
+	;; Check for an error
+	cmp	rax, -1
+	jne	.success
+
+.error:
+	mov 	rax, ERROR	
+	jmp     .end
+
+.success:
+	mov	rax, SUCCESS
+
+.end:
+	fpost
+	ret
+
+;; Get the index in the hashmap for a key
+;; 	@[I] key	<RDX: ptr> Pointer to a string key.
+;;	@[O] index	<RAX: uint32> Index for a key or -1 (error)
+kv_get_index:
+	fpre
+
+	call 	str_hashcode
+	
+	mov	rdx, kv_array_size 
+	div 	rdx
+	mov	rax, rdx ;; rax = hashcode % kv_array_size
+
+	fpost
+	ret
+
+;; Set a KVNode at an index in the hashmap.
+;;	@[I] key	<RDX: ptr>    Pointer to a string to use as a key.
+;; 	@[I] value	<RSI: ptr>    Pointer to bytes.
+;; 	@[I] value_size <RDI: uint32> Length of the value bytes.
+;;      @[I] index      <R8: uint32>  Index the hashmap to set.  
+kv_set_index:
 	fpre
 	fpost
 	ret
 
-;; Get a value from a hashmap using a key.
-;;   @[I] hashmap      <RDX: ptr>    Pointer to a hashmap data structure.
-;;   @[I] key          <RSI: ptr>    Pointer to a string to use as a key.
-;;   @[O] value        <RDI: ptr>    Pointer to the value bytes or 0 if not found.
-;;   @[O] value_length <R8: uint32>  Length of the value if it was found.
+;; Get a value from the hashmap using a key.
+;;   @[I] key          <RDX: ptr>     Pointer to a string to use as a key.
+;;   @[O] value        <RSI: ptr>     Pointer to the value bytes or 0 if not found.
+;;   @[O] value_length <RDI: uint32>  Length of the value if it was found.
 kv_get:
 	fpre
 	fpost
