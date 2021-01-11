@@ -1,3 +1,5 @@
+.DEFAULT_GOAL := barekv
+
 barekv.o: barekv.asm
 	nasm -felf64 -g barekv.asm
 
