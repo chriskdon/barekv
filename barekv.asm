@@ -1,3 +1,6 @@
+%include "macros.asm"
+%include "string.asm"
+
 global _start
 
 ;; Strings are represented with the first byte as the length
@@ -10,88 +13,16 @@ global _start
 %define SUCCESS 0
 %define ERROR   1
 
-%macro invoke 1
-	call	%1
-%endmacro
-
-%macro invoke 2
-	mov 	rdx, %2
-	call	%1
-%endmacro
-
-%macro invoke 3
-	mov	rdx, %2
-	mov	rsi, %3
-	call 	%1
-%endmacro
-
-%macro invoke 4
-	mov	rdx, %2
-	mov	rsi, %3
-	mov	rdi, %4
-	call 	%1
-%endmacro
-
-%macro invoke 5
-	mov	rdx, %2
-	mov	rsi, %3
-	mov	rdi, %4
-	mov     r8, %5
-	call 	%1
-%endmacro
-
-%macro invoke 6
-	mov	rdx, %2
-	mov	rsi, %3
-	mov	rdi, %4
-	mov     r8, %5
-	mov	r9, %6
-	call 	%1
-%endmacro
-
-%macro invoke 7
-	mov	rdx, %2
-	mov	rsi, %3
-	mov	rdi, %4
-	mov     r8, %5
-	mov	r9, %6
-	mov	r10, %7
-	call 	%1
-%endmacro
-
-;; Function setup
-%macro fpre 0
-	push rdi
-	push rsi
-	push rdx
-	push r8
-	push r9
-	push r10
-	push rbx
-	push rcx
-%endmacro
-
-;; Function teardown
-%macro fpost 0
-	pop rcx
-	pop rbx
-	pop r10
-	pop r9
-	pop r8
-	pop rdx
-	pop rsi
-	pop rdi
-%endmacro
-
 section .data
 
 ptr_sz: equ 8
 
 struc KVNode 
-  .key      resb ptr_sz,
-  .value    resb ptr_sz,
-  .is_free  resb 1,
-  .next     resb ptr_sz
+  .key      	resb ptr_sz,
+  .value    	resb ptr_sz,
+  .value_size 	resb 4
+  .is_free  	resb 1,
+  .next     	resb ptr_sz
 endstruc
 
 msg: db 18, 'Hello World, Test', 0xA
@@ -118,89 +49,14 @@ section .text
 _start:
 	invoke 	kvpool_init
 
-	invoke 	kv_set_index, key_1, val_1, val_1_size, 0
+	; invoke 	kv_set_index, key_1, val_1, val_1_size, 0
 
-	cmp	rax, 0 ; Check if there was an error setting the key
+	; cmp	rax, 0 ; Check if there was an error setting the key
 
-	call 	exit_success
-
-;; Check if two strings are equal.
-;; @[I] str_1 <RDX: ptr>   String pointer to compare.
-;; @[I] str_2 <RSI: ptr>   String pointer to compare.
-;; @[O] equal <RAX: byte>  1 if they are equal, 0 if not.
-str_equal:
-	fpre
-
-	;; Check if the string lengths are not equal
-	;; If the lengths aren't equal the strings can't be equal
-	mov	al, byte [rdx]
-	mov	ah, byte [rsi]
-	cmp 	al, ah
-	jne	.not_equal
-
-	;; Get to the begining of the strings
+	invoke str_equal, key_1, key_2
 	
-	;; Compare the characters in the strings
-	mov	ch, 0
-.cmp_char_loop:
-	;; Have we reached the end of the string
-	cmp	al, ch
-	je	.equal
-
-	inc	ch
-
-	inc	rdx
-	inc	rsi
-
-	mov	ah, byte [rdx]
-	cmp 	ah, byte [rsi]
-	je	.cmp_char_loop
-
-.not_equal:
-	mov	rax, 0
-	jmp	.end
-.equal:
-	mov	rax, 1
-.end:
-	fpost
-	ret
-
-;; Get the hashcode for a string.
-;; (Taken from java.lang.String)
-;; The hash code for a string is computed as
-;;   s[0]*31^(n-1) + s[1]*31^(n-2) + ... + s[n-1]
-;; using int arithmetic, where s[i] is the
-;; `i`'th character of the string, `n` is the length of
-;; the string, and ^ indicates exponentiation.
-;; https://cs.gmu.edu/~kauffman/cs310/w06-1.pdf (page 7)
-;; (The hash value of the empty string is	 zero.)
-;;   @[I] str      <RDX: ptr>    Pointer to a null terminated string
-;;   @[O] hashcode <RAX: uint64> Hashcode for the string.
-str_hashcode:
-	fpre
-
-	mov	rax, 0 ; h = 0
-	mov 	rcx, 0 ; i = 0
-	movzx   r9, byte [rdx] ; length of the string
-	inc 	rdx ; rdx += 1 to skip length byte
-	mov	r8, rdx ; s = string
-.hash_loop:
-	cmp 	rcx, r9
-	je 	.end
-
-	;; h = h * 31
-	mov	rdx, 31
-	mul	rdx
-
-	;; h = h + str[i + 1] 
-	add	rax, [r8 + rcx]
-	
-	inc 	rcx
-	jmp 	.hash_loop
-
-.end:
-	fpost
-	ret
+	invoke  str_print, key_1
+	invoke 	exit_success
 
 ;; Initialize the KV pool.
 kvpool_init:
@@ -263,16 +119,10 @@ kvpool_free:
 
 	mov 	qword [rdx + KVNode.key], 0
 	mov 	qword [rdx + KVNode.value], 0
+	mov	dword [rdx + KVNode.value_size], 0
 	mov 	byte  [rdx + KVNode.is_free], 1	
 	mov 	qword [rdx + KVNode.next], 0
 
-	fpost
-	ret
-
-;; Debug function that prints out the hashmap.
-;;   @[I] hashmap <RDX: ptr> Pointer to a hashmap data structure.
-kv_print:
-	fpre	
 	fpost
 	ret
 	
@@ -285,10 +135,10 @@ kv_set:
 	fpre
 
 	;; Get the index for the key 
-	invoke 	kv_get_index, rdx
+	invoke 	kv__get_index, rdx
 
 	;; Set the node in the hashmap
-	invoke 	kv_set_index, rdx, rsi, rdi, rax
+	invoke 	kv__set_index, rdx, rsi, rdi, rax
 
 	;; Check for an error
 	cmp	rax, -1
@@ -308,7 +158,7 @@ kv_set:
 ;; Get the index in the hashmap for a key
 ;; 	@[I] key	<RDX: ptr> Pointer to a string key.
 ;;	@[O] index	<RAX: uint32> Index for a key or -1 (error)
-kv_get_index:
+kv__get_index:
 	fpre
 
 	invoke 	str_hashcode
@@ -324,16 +174,29 @@ kv_get_index:
 ;;	@[I] key	<RDX: ptr>    Pointer to a string to use as a key.
 ;; 	@[I] value	<RSI: ptr>    Pointer to bytes.
 ;; 	@[I] value_size <RDI: uint32> Length of the value bytes.
-;;      @[I] index      <R8: uint32>  Index the hashmap to set.  
-kv_set_index:
+;;      @[I] index      <R8: uint32>  Index the hashmap to set.
+;;      @[O] node       <RAX: ptr>    If a node was replaced on insert then the
+;;                                    old KVNode will be returned; 0 otherwise.
+kv__set_index:
 	fpre
 
 	;; Get the address of the KVNode @ index
 	mov 	r9, [kv_array + r8]
 
 	;; Check if the key is already set
-	mov	r9, [r9 + KVNode.key]
+	lea	r9, [r9 + KVNode.key]
+	invoke 	str_equal, r9, rdx
+	cmp	rax, 1
+	je	.key_exists
 
+.key_exists:
+	mov	[r9 + KVNode.value], rsi
+	mov	[r9 + KVNode.value_size], rdi
+
+	jmp 	.end
+.new_key:
+
+.end:
 	fpost
 	ret
 
@@ -343,25 +206,6 @@ kv_set_index:
 ;;   @[O] value_length <RDI: uint32>  Length of the value if it was found.
 kv_get:
 	fpre
-	fpost
-	ret
-
-;; Print a string;
-;;   @[I] str  <RSI: ptr>    Pointer to string to be printed.
-print_str:
-	fpre
-
-	push 	rdx
-
-	movzx	rdx, byte [rdx]
-
-	pop 	rsi
-	inc	rsi
-
-	mov 	edi, 1 ; STDOUT
-	mov 	eax, 1 ; sys_write
-	syscall
-
 	fpost
 	ret
 

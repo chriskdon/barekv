@@ -1,10 +1,10 @@
 .DEFAULT_GOAL := barekv
 
-barekv.o: barekv.asm
+barekv.o: *.asm
 	nasm -felf64 -g barekv.asm
 
 barekv: barekv.o
 	ld barekv.o -o barekv
 
-preprocess: barekv.asm
+preprocess: *.asm
 	nasm -e barekv.asm
