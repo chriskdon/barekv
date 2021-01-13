@@ -5,3 +5,6 @@ barekv.o: barekv.asm
 
 barekv: barekv.o
 	ld barekv.o -o barekv
+
+preprocess: barekv.asm
+	nasm -e barekv.asm

@@ -10,6 +10,55 @@ global _start
 %define SUCCESS 0
 %define ERROR   1
 
+%macro invoke 1
+	call	%1
+%endmacro
+
+%macro invoke 2
+	mov 	rdx, %2
+	call	%1
+%endmacro
+
+%macro invoke 3
+	mov	rdx, %2
+	mov	rsi, %3
+	call 	%1
+%endmacro
+
+%macro invoke 4
+	mov	rdx, %2
+	mov	rsi, %3
+	mov	rdi, %4
+	call 	%1
+%endmacro
+
+%macro invoke 5
+	mov	rdx, %2
+	mov	rsi, %3
+	mov	rdi, %4
+	mov     r8, %5
+	call 	%1
+%endmacro
+
+%macro invoke 6
+	mov	rdx, %2
+	mov	rsi, %3
+	mov	rdi, %4
+	mov     r8, %5
+	mov	r9, %6
+	call 	%1
+%endmacro
+
+%macro invoke 7
+	mov	rdx, %2
+	mov	rsi, %3
+	mov	rdi, %4
+	mov     r8, %5
+	mov	r9, %6
+	mov	r10, %7
+	call 	%1
+%endmacro
+
 ;; Function setup
 %macro fpre 0
 	push rdi
@@ -52,7 +101,7 @@ key_2: db 5, 'key_2'
 key_3: db 5, 'key_3'
 
 val_1: db 'val_1'
-val_2_size: equ $ - val_1
+val_1_size: equ $ - val_1
 
 test_str: db 4,'test'
 
@@ -67,16 +116,54 @@ kv_array: resb kv_array_size * ptr_sz  ;; Array of pointers to KVNodes
 section .text
 
 _start:
-	call 	kvpool_init
+	invoke 	kvpool_init
 
-	call 	kvpool_get
-	call	kvpool_get
-	call 	kvpool_get
+	invoke 	kv_set_index, key_1, val_1, val_1_size, 0
 
-	lea 	rdx, [msg]
-	call 	print_str
+	cmp	rax, 0 ; Check if there was an error setting the key
 
 	call 	exit_success
+
+;; Check if two strings are equal.
+;; @[I] str_1 <RDX: ptr>   String pointer to compare.
+;; @[I] str_2 <RSI: ptr>   String pointer to compare.
+;; @[O] equal <RAX: byte>  1 if they are equal, 0 if not.
+str_equal:
+	fpre
+
+	;; Check if the string lengths are not equal
+	;; If the lengths aren't equal the strings can't be equal
+	mov	al, byte [rdx]
+	mov	ah, byte [rsi]
+	cmp 	al, ah
+	jne	.not_equal
+
+	;; Get to the begining of the strings
+	
+	;; Compare the characters in the strings
+	mov	ch, 0
+.cmp_char_loop:
+	;; Have we reached the end of the string
+	cmp	al, ch
+	je	.equal
+
+	inc	ch
+
+	inc	rdx
+	inc	rsi
+
+	mov	ah, byte [rdx]
+	cmp 	ah, byte [rsi]
+	je	.cmp_char_loop
+
+.not_equal:
+	mov	rax, 0
+	jmp	.end
+.equal:
+	mov	rax, 1
+.end:
+	fpost
+	ret
 
 ;; Get the hashcode for a string.
 ;; (Taken from java.lang.String)
@@ -198,11 +285,10 @@ kv_set:
 	fpre
 
 	;; Get the index for the key 
-	call 	kv_get_index
+	invoke 	kv_get_index, rdx
 
 	;; Set the node in the hashmap
-	mov 	r8, rax
-	call 	kv_set_index
+	invoke 	kv_set_index, rdx, rsi, rdi, rax
 
 	;; Check for an error
 	cmp	rax, -1
@@ -225,7 +311,7 @@ kv_set:
 kv_get_index:
 	fpre
 
-	call 	str_hashcode
+	invoke 	str_hashcode
 	
 	mov	rdx, kv_array_size 
 	div 	rdx
@@ -241,6 +327,13 @@ kv_get_index:
 ;;      @[I] index      <R8: uint32>  Index the hashmap to set.  
 kv_set_index:
 	fpre
+
+	;; Get the address of the KVNode @ index
+	mov 	r9, [kv_array + r8]
+
+	;; Check if the key is already set
+	mov	r9, [r9 + KVNode.key]
+
 	fpost
 	ret
 
