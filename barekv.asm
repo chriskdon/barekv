@@ -55,18 +55,16 @@ _start:
 	invoke 	kvpool_init
 
 	invoke 	kv_set, key_1, val_1, val_1_size
-	mov 	rax, [kv_array + 8]
-	invoke	str_print, [rax + KVNode.key]
+	invoke 	kv_get, key_1
+	invoke	str_print, rax
 
 	invoke 	kv_set, key_2, val_2, val_2_size
-	mov 	rax, [kv_array]
-	; mov 	rax, [rax + KVNode.next]
-	invoke	str_print, [rax + KVNode.key]
+	invoke	kv_get, key_2
+	invoke	str_print, rax
 
 	invoke 	kv_set, key_3, val_2, val_2_size
-	mov 	rax, [kv_array + 8]
-	mov 	rax, [rax + KVNode.next]
-	invoke	str_print, [rax + KVNode.key]
+	invoke	kv_get, key_3
+	invoke	str_print, rax 
 
 	invoke 	exit_success
 
@@ -288,10 +286,55 @@ kv__set_index:
 
 ;; Get a value from the hashmap using a key.
 ;;   @[I] key          <RDX: ptr>     Pointer to a string to use as a key.
-;;   @[O] value        <RSI: ptr>     Pointer to the value bytes or 0 if not found.
-;;   @[O] value_length <RDI: uint32>  Length of the value if it was found.
+;; 
+;; FIXME: value should be a single struct with the length
+;;   @[O] value        <RAX: ptr>     Pointer to the value bytes or 0 if not found.
+;;   @[O] value_length <R11: uint32>  Length of the value if it was found.
 kv_get:
 	fpre
+
+	invoke	kv__get_index, rdx
+
+	;; FIXME: This is a duplicate of what's in kv__set_index
+
+	;; Get the KVNode @ index
+	;; KVNode* rbx = kv_array[index]
+	;; KVNode  r9  = *rbx
+	lea	rbx, [kv_array + rax*ptr_sz]
+	mov 	r9, [rbx] 
+
+.find_insert_point:
+	;; Check if the node doesn't exist.
+	cmp	r9, 0
+	je	.key_not_found
+
+	;; Check if the key already exists
+	;; r10 = r9.key
+	mov	r10, [r9 + KVNode.key]
+
+	;; If the keys exists then we'll overwrite it
+	;; rax = str_equal(...)
+	invoke 	str_equal, rdx, r10
+	cmp	rax, 1
+	je	.key_found
+
+	;; Follow the linked list of nodes
+	;; KVNode* rbx = r9.next (current node)
+	;; KVNode  r9  = *rbx
+	lea 	rbx, [r9 + KVNode.next]
+	mov	r9, [rbx]
+	jmp	.find_insert_point
+
+.key_found:
+	mov	rax, [r9 + KVNode.value]
+	mov	r11, [r9 + KVNode.value_size]
+	jmp	.end
+
+.key_not_found:
+	mov 	rax, 0
+	mov	r11, 0
+
+.end:
 	fpost
 	ret
 
