@@ -46,7 +46,7 @@ section .bss
 kv_pool_size: equ 5
 kv_pool: resb kv_pool_size * KVNode_size
 
-kv_array_size: equ 1
+kv_array_size: equ 2
 kv_array: resb kv_array_size * ptr_sz  ;; Array of pointers to KVNodes
 
 section .text
@@ -54,26 +54,20 @@ section .text
 _start:	
 	invoke 	kvpool_init
 
-	invoke 	kv__set_index, key_1, val_1, val_1_size, 0
-	mov 	rax, [kv_array]
-	invoke	str_print, [rax + KVNode.value]
+	invoke 	kv_set, key_1, val_1, val_1_size
+	mov 	rax, [kv_array + 8]
+	invoke	str_print, [rax + KVNode.key]
 
-	invoke 	kv__set_index, key_1, val_2, val_2_size, 0
-
+	invoke 	kv_set, key_2, val_2, val_2_size
 	mov 	rax, [kv_array]
 	; mov 	rax, [rax + KVNode.next]
-	invoke	str_print, [rax + KVNode.value]
+	invoke	str_print, [rax + KVNode.key]
 
-	invoke	kv__set_index, key_2, val_2, val_2_size, 0
-	mov 	rax, [kv_array]
+	invoke 	kv_set, key_3, val_2, val_2_size
+	mov 	rax, [kv_array + 8]
 	mov 	rax, [rax + KVNode.next]
-	invoke	str_print, [rax + KVNode.value]
+	invoke	str_print, [rax + KVNode.key]
 
-
-
-	; cmp	rax, 0 ; Check if there was an error setting the key
-	; invoke str_equal, key_1, key_2
-	; invoke  str_print, key_1
 	invoke 	exit_success
 
 ;; Throw an exception
@@ -188,8 +182,10 @@ kv__get_index:
 
 	invoke 	str_hashcode
 	
-	mov	rdx, kv_array_size 
-	div 	rdx
+	mov	rdx, 0
+	mov	rcx, kv_array_size
+	div 	rcx
+
 	mov	rax, rdx ;; rax = hashcode % kv_array_size
 
 	fpost
@@ -211,7 +207,7 @@ kv__set_index:
 	;; Get the KVNode @ index
 	;; KVNode* rbx = kv_array[index]
 	;; KVNode  r9  = *rbx
-	lea	rbx, [kv_array + r8]
+	lea	rbx, [kv_array + r8*ptr_sz]
 	mov 	r9, [rbx] 
 
 .find_insert_point:
