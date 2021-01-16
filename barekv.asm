@@ -31,32 +31,57 @@ key_1: db 5, 'key_1'
 key_2: db 5, 'key_2'
 key_3: db 5, 'key_3'
 
-val_1: db 'val_1'
+val_1: db 5,'val_1'
 val_1_size: equ $ - val_1
 
+val_2: db 5,'val_2'
+val_2_size: equ $ - val_2
+
 test_str: db 4,'test'
+
+ex_msg_no_free_nodes: db 27,'Pool is out of free nodes.',0xA
 
 section .bss
 
 kv_pool_size: equ 5
 kv_pool: resb kv_pool_size * KVNode_size
 
-kv_array_size: equ 100
+kv_array_size: equ 1
 kv_array: resb kv_array_size * ptr_sz  ;; Array of pointers to KVNodes
 
 section .text
 
-_start:
+_start:	
 	invoke 	kvpool_init
 
-	; invoke 	kv_set_index, key_1, val_1, val_1_size, 0
+	invoke 	kv__set_index, key_1, val_1, val_1_size, 0
+	mov 	rax, [kv_array]
+	invoke	str_print, [rax + KVNode.value]
+
+	invoke 	kv__set_index, key_1, val_2, val_2_size, 0
+
+	mov 	rax, [kv_array]
+	; mov 	rax, [rax + KVNode.next]
+	invoke	str_print, [rax + KVNode.value]
+
+	invoke	kv__set_index, key_2, val_2, val_2_size, 0
+	mov 	rax, [kv_array]
+	mov 	rax, [rax + KVNode.next]
+	invoke	str_print, [rax + KVNode.value]
+
+
 
 	; cmp	rax, 0 ; Check if there was an error setting the key
-
-	invoke str_equal, key_1, key_2
-	
-	invoke  str_print, key_1
+	; invoke str_equal, key_1, key_2
+	; invoke  str_print, key_1
 	invoke 	exit_success
+
+;; Throw an exception
+;;   @[I] msg <RDX: ptr> String to the exception message.
+throw_ex:
+	invoke	str_print, rdx
+	invoke 	exit_success ;; FIXME 
+	ret;
 
 ;; Initialize the KV pool.
 kvpool_init:
@@ -175,26 +200,91 @@ kv__get_index:
 ;; 	@[I] value	<RSI: ptr>    Pointer to bytes.
 ;; 	@[I] value_size <RDI: uint32> Length of the value bytes.
 ;;      @[I] index      <R8: uint32>  Index the hashmap to set.
-;;      @[O] node       <RAX: ptr>    If a node was replaced on insert then the
-;;                                    old KVNode will be returned; 0 otherwise.
+;;      @[O] node       <RAX: ptr>    If a node was replaced then the
+;;                                    old KVNode will be returned, if a new
+;;                                    node was inserted 0 is returned, if
+;;                                    the node could not be inserted, -1 
+;;                                    is returned.
 kv__set_index:
 	fpre
 
-	;; Get the address of the KVNode @ index
-	mov 	r9, [kv_array + r8]
+	;; Get the KVNode @ index
+	;; KVNode* rbx = kv_array[index]
+	;; KVNode  r9  = *rbx
+	lea	rbx, [kv_array + r8]
+	mov 	r9, [rbx] 
 
-	;; Check if the key is already set
-	lea	r9, [r9 + KVNode.key]
-	invoke 	str_equal, r9, rdx
+.find_insert_point:
+	;; Check if the node doesn't exist.
+	cmp	r9, 0
+	je	.new_key
+
+	;; Check if the key already exists
+	;; r10 = r9.key
+	mov	r10, [r9 + KVNode.key]
+
+	;; If the keys exists then we'll overwrite it
+	;; rax = str_equal(...)
+	invoke 	str_equal, rdx, r10
 	cmp	rax, 1
 	je	.key_exists
 
+	;; Follow the linked list of nodes
+	;; KVNode* rbx = r9.next (current node)
+	;; KVNode  r9  = *rbx
+	lea 	rbx, [r9 + KVNode.next]
+	mov	r9, [rbx]
+	jmp	.find_insert_point
+
+	;; The keys exists already so we need to overwrite it.
+	;; This can be done by replacing the KVNode.
 .key_exists:
-	mov	[r9 + KVNode.value], rsi
-	mov	[r9 + KVNode.value_size], rdi
+	;; Get a free node
+	invoke 	kvpool_get
+	cmp	rax, 0
+	je	.throw_no_free_nodes
+
+	;; Set the node values
+	mov	[rax + KVNode.key], rdx
+	mov	[rax + KVNode.value], rsi
+	mov	[rax + KVNode.value_size], rdi
+
+	;; Update the next pointer to match the current node
+	mov	rcx, [r9 + KVNode.next]
+	mov	[rax + KVNode.next], rcx
+
+	;; Set the old .next = 0
+	mov	qword [r9 + KVNode.next], 0
+
+	;; Set the new KVNode and return the replaced node
+	mov	[rbx], rax
+	mov	rax, r9
 
 	jmp 	.end
+
+	;; The key doesn't exist so we
 .new_key:
+	;; TODO: Remove duplicated code
+
+	;; Get a free node
+	invoke 	kvpool_get
+	cmp	rax, 0
+	je	.throw_no_free_nodes
+
+	;; Set the node values
+	mov	[rax + KVNode.key], rdx
+	mov	[rax + KVNode.value], rsi
+	mov	[rax + KVNode.value_size], rdi
+
+	;; Set the new KVNode and return the replaced node
+	mov	[rbx], rax
+	mov	rax, 0
+
+	jmp	.end
+
+	;; Could not get any free nodes from the pool. 
+.throw_no_free_nodes:
+	invoke	throw_ex, ex_msg_no_free_nodes	
 
 .end:
 	fpost

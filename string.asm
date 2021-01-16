@@ -77,7 +77,7 @@ str_hashcode:
 	ret
 
 ;; Print a string;
-;;   @[I] str  <RSI: ptr>    Pointer to string to be printed.
+;;   @[I] str  <RDX: ptr>    Pointer to string to be printed.
 str_print:
 	fpre
 
