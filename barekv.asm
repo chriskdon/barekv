@@ -46,7 +46,7 @@ section .bss
 kv_pool_size: equ 5
 kv_pool: resb kv_pool_size * KVNode_size
 
-kv_array_size: equ 2
+kv_array_size: equ 5
 kv_array: resb kv_array_size * ptr_sz  ;; Array of pointers to KVNodes
 
 section .text
